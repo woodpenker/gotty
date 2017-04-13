@@ -18,7 +18,9 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"text/template"
+	"time"
 
 	"github.com/braintree/manners"
 	"github.com/elazarl/go-bindata-assetfs"
@@ -43,8 +45,11 @@ type App struct {
 	titleTemplate *template.Template
 
 	onceMutex *umutex.UnblockingMutex
+	timer     *time.Timer
 
-	connections int
+	// clientContext writes concurrently
+	// Use atomic operations.
+	connections *int64
 }
 
 type Options struct {
@@ -66,10 +71,13 @@ type Options struct {
 	ReconnectTime       int                    `hcl:"reconnect_time"`
 	MaxConnection       int                    `hcl:"max_connection"`
 	Once                bool                   `hcl:"once"`
+	Timeout             int                    `hcl:"timeout"`
 	PermitArguments     bool                   `hcl:"permit_arguments"`
 	CloseSignal         int                    `hcl:"close_signal"`
 	Preferences         HtermPrefernces        `hcl:"preferences"`
 	RawPreferences      map[string]interface{} `hcl:"preferences"`
+	Width               int                    `hcl:"width"`
+	Height              int                    `hcl:"height"`
 }
 
 var Version = "0.0.13"
@@ -95,6 +103,8 @@ var DefaultOptions = Options{
 	Once:                false,
 	CloseSignal:         1, // syscall.SIGHUP
 	Preferences:         HtermPrefernces{},
+	Width:               0,
+	Height:              0,
 }
 
 func New(command []string, options *Options) (*App, error) {
@@ -102,6 +112,8 @@ func New(command []string, options *Options) (*App, error) {
 	if err != nil {
 		return nil, errors.New("Title format string syntax error")
 	}
+
+	connections := int64(0)
 
 	return &App{
 		command: command,
@@ -115,7 +127,8 @@ func New(command []string, options *Options) (*App, error) {
 
 		titleTemplate: titleTemplate,
 
-		onceMutex: umutex.New(),
+		onceMutex:   umutex.New(),
+		connections: &connections,
 	}, nil
 }
 
@@ -231,6 +244,14 @@ func (app *App) Run() error {
 		server,
 	)
 
+	if app.options.Timeout > 0 {
+		app.timer = time.NewTimer(time.Duration(app.options.Timeout) * time.Second)
+		go func() {
+			<-app.timer.C
+			app.Exit()
+		}()
+	}
+
 	if app.options.EnableTLS {
 		crtFile := ExpandHomeDir(app.options.TLSCrtFile)
 		keyFile := ExpandHomeDir(app.options.TLSKeyFile)
@@ -277,9 +298,24 @@ func (app *App) makeServer(addr string, handler *http.Handler) (*http.Server, er
 	return server, nil
 }
 
+func (app *App) stopTimer() {
+	if app.options.Timeout > 0 {
+		app.timer.Stop()
+	}
+}
+
+func (app *App) restartTimer() {
+	if app.options.Timeout > 0 {
+		app.timer.Reset(time.Duration(app.options.Timeout) * time.Second)
+	}
+}
+
 func (app *App) handleWS(w http.ResponseWriter, r *http.Request) {
-	if app.options.MaxConnection != 0 {
-		if app.connections >= app.options.MaxConnection {
+	app.stopTimer()
+
+	connections := atomic.AddInt64(app.connections, 1)
+	if int64(app.options.MaxConnection) != 0 {
+		if connections >= int64(app.options.MaxConnection) {
 			log.Printf("Reached max connection: %d", app.options.MaxConnection)
 			return
 		}
@@ -353,13 +389,12 @@ func (app *App) handleWS(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	app.connections++
 	if app.options.MaxConnection != 0 {
 		log.Printf("Command is running for client %s with PID %d (args=%q), connections: %d/%d",
-			r.RemoteAddr, cmd.Process.Pid, strings.Join(argv, " "), app.connections, app.options.MaxConnection)
+			r.RemoteAddr, cmd.Process.Pid, strings.Join(argv, " "), connections, app.options.MaxConnection)
 	} else {
 		log.Printf("Command is running for client %s with PID %d (args=%q), connections: %d",
-			r.RemoteAddr, cmd.Process.Pid, strings.Join(argv, " "), app.connections)
+			r.RemoteAddr, cmd.Process.Pid, strings.Join(argv, " "), connections)
 	}
 
 	context := &clientContext{

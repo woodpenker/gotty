@@ -25,8 +25,7 @@ Download the latest binary file from the [Releases](https://github.com/yudai/got
 You can install GoTTY with [Homebrew](http://brew.sh/) as well.
 
 ```sh
-$ brew tap yudai/gotty
-$ brew install gotty
+$ brew install yudai/gotty/gotty
 ```
 
 ## `go get` Installation
@@ -64,6 +63,7 @@ By default, GoTTY starts a web server at port 8080. Open the URL on your web bro
 --title-format "GoTTY - {{ .Command }} ({{ .Hostname }})"    Title format of browser window [$GOTTY_TITLE_FORMAT]
 --reconnect                                                  Enable reconnection [$GOTTY_RECONNECT]
 --reconnect-time "10"                                        Time to reconnect [$GOTTY_RECONNECT_TIME]
+--timeout "0"                                                Timeout seconds for waiting a client (0 to disable) [$GOTTY_TIMEOUT]
 --once                                                       Accept only one client and exit on disconnection [$GOTTY_ONCE]
 --permit-arguments                                           Permit clients to send command line arguments in URL (e.g. http://example.com:8080/?arg=AAA&arg=BBB) [$GOTTY_PERMIT_ARGUMENTS]
 --close-signal "1"                                           Signal sent to the command process when gotty close it (default: SIGHUP) [$GOTTY_CLOSE_SIGNAL]
@@ -85,7 +85,7 @@ enable_tls = true
 // hterm preferences
 // Smaller font and a little bit bluer background color
 preferences {
-    font_size = 5,
+    font_size = 5
     background_color = "rgb(16, 16, 32)"
 }
 ```
@@ -178,6 +178,7 @@ GoTTY uses [hterm](https://groups.google.com/a/chromium.org/forum/#!forum/chromi
 
 * [Secure Shell (Chrome App)](https://chrome.google.com/webstore/detail/secure-shell/pnhechapfaindjhompbnflcldabbghjo): If you are a chrome user and need a "real" SSH client on your web browser, perhaps the Secure Shell app is what you want
 * [Wetty](https://github.com/krishnasrinivas/wetty): Node based web terminal (SSH/login)
+* [ttyd](https://tsl0922.github.io/ttyd): C port of GoTTY with CJK and IME support
 
 ### Terminal Sharing
 
